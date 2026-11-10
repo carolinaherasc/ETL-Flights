@@ -1,71 +1,126 @@
-#https://openskynetwork.github.io/opensky-api/python.html
+# https://openskynetwork.github.io/opensky-api/python.html
 
 import time
 import csv
 import os
 from opensky_api import OpenSkyApi, TokenManager
+import pandas as pd
+import os
 
-def extract_flight_data(airport_icao="EIDW", hours_back=23, output_csv="vuelos_dublin_raw.csv"):
-    credentials_path = "credentials.json"
+def extractFlightData(airportIcao="EIDW", hoursBack=23, outputCsv="dublinFlightsRaw.csv"):
+    credentialsPath = "credentials.json"
 
-    if not os.path.exists(credentials_path):
-        raise FileNotFoundError(f"Missing '{credentials_path}'. Ensure it is located in the working directory.")
+    if not os.path.exists(credentialsPath):
+        raise FileNotFoundError(f"Missing '{credentialsPath}'. Ensure it is located in the working directory.")
 
-    print(f"Loading credentials from {credentials_path}...")
-    token_mgr = TokenManager.from_json_file(credentials_path)
-    api = OpenSkyApi(token_manager=token_mgr)
+    print(f"Loading credentials from {credentialsPath}...")
+    tokenMgr = TokenManager.from_json_file(credentialsPath)
+    api = OpenSkyApi(token_manager=tokenMgr)
 
     # OpenSky: not exceed 1 UTC calendar day
-    end_time = int(time.time())
-    begin_time = end_time - (hours_back * 3600)
+    endTime = int(time.time())
+    beginTime = endTime - (hoursBack * 3600)
 
-    arrivals = api.get_arrivals_by_airport(airport_icao, begin_time, end_time)
-    departures = api.get_departures_by_airport(airport_icao, begin_time, end_time)
+    arrivals = api.get_arrivals_by_airport(airportIcao, beginTime, endTime)
+    departures = api.get_departures_by_airport(airportIcao, beginTime, endTime)
 
-    total_arrivals = len(arrivals) if arrivals else 0
-    total_departures = len(departures) if departures else 0
-    print(f"Retrieved: {total_arrivals} arrivals and {total_departures} departures.")
+    totalArrivals = len(arrivals) if arrivals else 0
+    totalDepartures = len(departures) if departures else 0
+    print(f"Retrieved: {totalArrivals} arrivals and {totalDepartures} departures.")
 
-    fieldnames = [
-        "tipo_vuelo",
+    fieldNames = [
+        "flightType",
         "callsign",
         "icao24",
-        "aeropuerto_origen",
-        "aeropuerto_destino",
-        "salida_unix",
-        "llegada_unix"
+        "originAirport",
+        "destinationAirport",
+        "departureUnix",
+        "arrivalUnix",
+        "originHorizDistance",
+        "originVertDistance",
+        "destinationHorizDistance",
+        "destinationVertDistance"
     ]
 
-    with open(output_csv, mode="w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+    with open(outputCsv, mode="w", newline="", encoding="utf-8") as csvFile:
+        writer = csv.DictWriter(csvFile, fieldnames=fieldNames)
         writer.writeheader()
 
         if arrivals:
             for flight in arrivals:
                 writer.writerow({
-                    "tipo_vuelo": "Llegada",
+                    "flightType": "Arrival",
                     "callsign": flight.callsign,
                     "icao24": flight.icao24,
-                    "aeropuerto_origen": flight.estDepartureAirport,
-                    "aeropuerto_destino": flight.estArrivalAirport,
-                    "salida_unix": flight.firstSeen,
-                    "llegada_unix": flight.lastSeen
+                    "originAirport": flight.estDepartureAirport,
+                    "destinationAirport": flight.estArrivalAirport,
+                    "departureUnix": flight.firstSeen,
+                    "arrivalUnix": flight.lastSeen,
+                    "originHorizDistance": flight.estDepartureAirportHorizDistance,
+                    "originVertDistance": flight.estDepartureAirportVertDistance,
+                    "destinationHorizDistance": flight.estArrivalAirportHorizDistance,
+                    "destinationVertDistance": flight.estArrivalAirportVertDistance
                 })
 
         if departures:
             for flight in departures:
                 writer.writerow({
-                    "tipo_vuelo": "Salida",
+                    "flightType": "Departure",
                     "callsign": flight.callsign,
                     "icao24": flight.icao24,
-                    "aeropuerto_origen": flight.estDepartureAirport,
-                    "aeropuerto_destino": flight.estArrivalAirport,
-                    "salida_unix": flight.firstSeen,
-                    "llegada_unix": flight.lastSeen
+                    "originAirport": flight.estDepartureAirport,
+                    "destinationAirport": flight.estArrivalAirport,
+                    "departureUnix": flight.firstSeen,
+                    "arrivalUnix": flight.lastSeen,
+                    "originHorizDistance": flight.estDepartureAirportHorizDistance,
+                    "originVertDistance": flight.estDepartureAirportVertDistance,
+                    "destinationHorizDistance": flight.estArrivalAirportHorizDistance,
+                    "destinationVertDistance": flight.estArrivalAirportVertDistance
                 })
 
-    print(f"Data saved successfully to '{output_csv}'. Total rows written: {total_arrivals + total_departures}")
-    return output_csv
+    print(f"Data saved successfully to '{outputCsv}'. Total rows written: {totalArrivals + totalDepartures}")
+    return outputCsv
+
+
+def loadData(filePath):
+    if not os.path.exists(filePath):
+        print(f"Error: File '{filePath}' not found.")
+        return None
+    df = pd.read_csv(filePath)
+    return df
+
+def cleanData(df):
+    #Remove duplicates
+    df = df.drop_duplicates()
+
+    #Standardize and clean Callsign
+    df["callsign"] = df["callsign"].astype(str).str.strip()
+    df["callsign"] = df["callsign"].replace([""], "UNKNOWN")
+
+    # Fill missing airport information
+    df["originAirport"] = df["originAirport"].fillna("UNKNOWN")
+    df["destinationAirport"] = df["destinationAirport"].fillna("UNKNOWN")
+
+    #Replace missing distance
+    distanceCols = ["originHorizDistance","originVertDistance","destinationHorizDistance","destinationVertDistance"]
+
+    for col in distanceCols:
+        if col in df.columns:
+            df[col] = df[col].fillna(0.0)
+
+    #Filter out invalid flight records
+    validFlights = df["arrivalUnix"] > df["departureUnix"]
+    df = df[validFlights]
+
+    return df
+
 
 if __name__ == "__main__":
-    extract_flight_data()
+    #extractFlightData()
+    
+    rawFile = "dublinFlightsRaw.csv"
+    rawDf = loadData(rawFile)
+    print("Load")
+    
+    cleanDf = cleanData(rawDf)
+    print("Clean")
