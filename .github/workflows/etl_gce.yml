@@ -1,0 +1,24 @@
+name: Run ETL on Google Cloud VM
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+
+  workflow_dispatch:
+
+jobs:
+  deploy-and-run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Conectar a GCE por SSH y ejecutar ETL
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.GCE_IP }}
+          username: ${{ secrets.GCE_USER }}
+          key: ${{ secrets.GCE_SSH_KEY }}
+          script: |
+            cd ~/ETL-Flights
+            git pull origin main
+            source venv/bin/activate
+            python src/flights.py

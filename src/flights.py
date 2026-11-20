@@ -8,13 +8,14 @@ import pandas as pd
 import numpy as np
 import os
 import sqlite3
+from sqlalchemy import create_engine, text
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 
-def extractFlightData(airportIcao="EIDW", hoursBack=5, outputCsv="dublinFlightsRaw2.csv"):
+def extractFlightData(airportIcao="EIDW", hoursBack=5, outputCsv="dublinFlightsRaw.csv"):
     credentialsPath = os.path.join(SCRIPT_DIR, "credentials.json")
 
     outputPath = os.path.join(DATA_DIR, outputCsv)
@@ -204,41 +205,33 @@ def transformData(df):
     return df[finalCols]
 
 
-def loadToDatabase(df, dbName="dublinFlights.db", tableName="flights"):
-    pathDB = os.path.join(DATA_DIR, dbName)
-    connectionDB = sqlite3.connect(pathDB)
+def loadToDatabase(df, tableName="flights"):
+    db_url = "postgresql+psycopg2://postgres:carolina@localhost:5432/dublin_flights"
+    engine = create_engine(db_url)
 
-    df.to_sql(tableName, connectionDB, if_exists="append", index=False)
+    df.to_sql(tableName, engine, if_exists="append", index=False)
 
-    cursor = connectionDB.cursor()
-    cursor.execute(f"""
-        DELETE FROM {tableName}
-        WHERE rowid NOT IN (
-            SELECT MIN(rowid)
-            FROM {tableName}
-            GROUP BY callsign, departureTime, originAirport, destinationAirport
-        )
-    """)
+    with engine.begin() as conn:
+        conn.execute(text(f"""
+            DELETE FROM {tableName}
+            WHERE ctid NOT IN (
+                SELECT MIN(ctid)
+                FROM {tableName}
+                GROUP BY "callsign", "departureTime", "originAirport", "destinationAirport"
+            );
+        """))
 
-    connectionDB.commit()
-    connectionDB.close()
+    print("Data loaded and deduplicated in PostgreSQL.")
 
 
 if __name__ == "__main__":
-    #extractFlightData()
-    rawFile = os.path.join(DATA_DIR, "dublinFlightsRaw2.csv")
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Starting ETL execution")
+    rawFile = extractFlightData(hoursBack=2)
     rawDf = loadData(rawFile)
-    print("Load")
 
-    cleanDf = cleanData(rawDf)
-    print("Clean")
-
-    transformDf=transformData(cleanDf)
-    print("Transform")
-
-    pd.set_option('display.max_columns', None)
-    pd.set_option('display.width', 1000)
-    print(transformDf.head())
-
-    loadToDatabase(transformDf)
-    print("Database")
+    if rawDf is not None and not rawDf.empty:
+        cleanDf = cleanData(rawDf)
+        transformDf = transformData(cleanDf)
+        loadToDatabase(transformDf)
+    else:
+        print("New flights weren't found.")
