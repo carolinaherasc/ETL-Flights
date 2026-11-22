@@ -1,24 +1,40 @@
-name: Run ETL on Google Cloud VM
+name: Run ETL on GitHub Actions with SQL Tunnel
 
 on:
   schedule:
     - cron: '*/30 * * * *'
-
   workflow_dispatch:
 
 jobs:
-  deploy-and-run:
+  run-etl:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Conectar a GCE por SSH y ejecutar ETL
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Descargar código del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
         with:
-          host: ${{ secrets.GCE_IP }}
-          username: ${{ secrets.GCE_USER }}
-          key: ${{ secrets.GCE_SSH_KEY }}
-          script: |
-            cd ~/ETL-Flights
-            git pull origin main
-            source venv/bin/activate
-            python src/flights.py
+          python-version: '3.12'
+
+      - name: Instalar dependencias
+        run: |
+          pip install pandas numpy sqlalchemy psycopg2-binary git+https://github.com/openskynetwork/opensky-api.git#subdirectory=python
+
+      - name: Preparar credenciales y carpeta data
+        env:
+          OPENSKY_CREDENTIALS: ${{ secrets.OPENSKY_CREDENTIALS }}
+        run: |
+          mkdir -p data
+          printf '%s' "$OPENSKY_CREDENTIALS" > src/credentials.json
+
+      - name: Abrir túnel SSH a PostgreSQL y ejecutar ETL
+        env:
+          GCE_SSH_KEY: ${{ secrets.GCE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$GCE_SSH_KEY" > ~/.ssh/gce_key
+          chmod 600 ~/.ssh/gce_key
+          ssh -f -N -o StrictHostKeyChecking=no -i ~/.ssh/gce_key -L 5432:localhost:5432 "${{ secrets.GCE_USER }}@${{ secrets.GCE_IP }}"
+          python src/flights.py
