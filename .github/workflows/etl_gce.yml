@@ -1,8 +1,6 @@
 name: Run ETL on GitHub Actions with SQL Tunnel
 
 on:
-  schedule:
-    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -10,26 +8,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Descargar código del repositorio
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configurar Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Instalar dependencias
+      - name: Install dependencies
         run: |
           pip install pandas numpy sqlalchemy psycopg2-binary git+https://github.com/openskynetwork/opensky-api.git#subdirectory=python
 
-      - name: Preparar credenciales y carpeta data
+      - name: Prepare credentials and data directory
         env:
           OPENSKY_CREDENTIALS: ${{ secrets.OPENSKY_CREDENTIALS }}
         run: |
           mkdir -p data
           printf '%s' "$OPENSKY_CREDENTIALS" > src/credentials.json
 
-      - name: Abrir túnel SSH a PostgreSQL y ejecutar ETL
+      - name: Open SSH tunnel to PostgreSQL and run ETL
         env:
           GCE_SSH_KEY: ${{ secrets.GCE_SSH_KEY }}
         run: |
